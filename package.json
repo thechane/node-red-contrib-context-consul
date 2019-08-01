@@ -3,7 +3,7 @@
   "keywords": [
     "node-red", "consul", "context"
   ],
-  "version": "0.0.2-beta",
+  "version": "0.0.3-beta",
   "description": "Node-RED Context storage plugin using Consul",
   "main": "index.js",
   "scripts": {
