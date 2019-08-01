@@ -1,0 +1,68 @@
+version: '2.4'
+services:
+
+  consulseed:
+    image: "consul:1.5.2"
+    entrypoint:
+      - consul
+      - agent
+      - -server
+      - -bootstrap-expect=3
+      - -data-dir=/tmp/consuldata
+      - -bind={{ GetPrivateInterfaces | include "network" "10.95.0.0/16" | attr "address" }}
+    networks:
+      - "consul"
+
+  consul:
+    image: "consul:1.5.2"
+    depends_on:
+      - "consulseed"
+    environment:
+      - "CONSUL_HTTP_ADDR=0.0.0.0"
+    entrypoint:
+      - consul
+      - agent
+      - -server
+      - -data-dir=/tmp/consuldata
+      - -bind={{ GetPrivateInterfaces | include "network" "10.95.0.0/16" | attr "address" }}
+      - -client=0.0.0.0
+      - -retry-join=consulseed:8301
+    networks:
+      - "consul"
+
+  consului:
+    image: "consul:1.5.2"
+    depends_on:
+      - "consulseed"
+    environment:
+      - "CONSUL_HTTP_ADDR=0.0.0.0"
+    entrypoint:
+      - consul
+      - agent
+      - -server
+      - -data-dir=/tmp/consuldata
+      - -bind={{ GetPrivateInterfaces | include "network" "10.95.0.0/16" | attr "address" }}
+      - -client=0.0.0.0
+      - -retry-join=consulseed:8301
+      - -ui                                              ##assuming you want the UI on
+    networks:
+      - "consul"
+    ports:
+      - "8500:8500"
+      - "8600:8600"
+
+  nodered:
+    build: ./
+    depends_on:
+      - "consul"
+    networks:
+      - "consul"
+    ports:
+      - "1880:1880"
+
+networks:
+  consul:
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.95.0.0/16

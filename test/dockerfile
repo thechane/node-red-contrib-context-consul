@@ -1,0 +1,16 @@
+FROM node:10-alpine
+RUN mkdir -p /home/node-red && mkdir /data
+WORKDIR /home/node-red
+RUN apk update && apk add --purge python make g++ && \
+  npm uninstall --verbose --unsafe-perm --global --save bcrypt && \
+  npm install --verbose --unsafe-perm --build-from-source --global bcrypt && \
+  apk del --purge python make g++
+RUN adduser -H -D -h /home/node-red node-red && \
+  chown -R node-red:node-red /data /home/node-red && \
+  chmod g+s /home/node-red
+USER node-red
+RUN npm install --verbose --unsafe-perm node-red node-red-contrib-context-consul
+EXPOSE 1880
+COPY ./settings.js /home/node-red/
+COPY ./startup.sh /home/node-red/
+CMD ["/home/node-red/startup.sh"]
