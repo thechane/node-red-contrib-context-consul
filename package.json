@@ -14,7 +14,9 @@
     "consul",
     "context"
   ],
-  "node-red": {},
+  "node-red": {
+    "version": ">=0.19.0"
+  },
   "author": "Stuart Chaney",
   "license": "Apache-2.0",
   "repository": {
