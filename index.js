@@ -430,10 +430,9 @@ ConsulContext.prototype.keys = function(scope, callback) {
 
 ConsulContext.prototype.delete = function(scope) {
 	if (this.debug) console.info("DEBUG:ConsulContext:delete in scope " + scope);
-	let cacheKey = this.prefix + "/" + scope;
-	if (this.cache && cacheKey in this.cache) delete this.cache[cacheKey];
 	let opts = Object.assign({}, this.opts);
 	opts.key = this.prefix + "/" + scope;
+	if (this.cache && opts.key in this.cache) delete this.cache[opts.key];
 	return deleteKey(this.client, opts, this.debug);
 }
 
@@ -446,11 +445,10 @@ ConsulContext.prototype.clean = function(activeNodes) {
 	if (this.cache) {
 		if (this.debug) console.info("DEBUG:ConsulContext:clean:cache:" + JSON.stringify(this.cache));
 		let skipCachedPath = (key) => {
-			let skipIt = false;
 			for (var i = 0; i < activeNodes.length; i++) {
-				if (key.startsWith(this.prefix + "/" + activeNodes[i])) skipIt = true;
+				if (key.startsWith(this.prefix + "/" + activeNodes[i])) return true;
 			}
-			return skipIt;
+			return false;
 		};
 		let cacheKeys = Object.keys(this.cache);
 		for (var i = 0; i < cacheKeys.length; i++) {
@@ -470,14 +468,10 @@ ConsulContext.prototype.clean = function(activeNodes) {
 		}).then(result => {
 			//quick function to scan the activeNodes
 			let skipPath = (key) => {
-				let skipIt = false;
 				for (var i = 0; i < activeNodes.length; i++) {
-					if (key.startsWith(this.prefix + "/" + activeNodes[i])) {
-						skipIt = true;
-						if (this.debug) console.info("DEBUG:ConsulContext:clean:skipPath:" + key + " starts with " + this.prefix + "/" + activeNodes[i]);
-					}
+					if (key.startsWith(this.prefix + "/" + activeNodes[i])) return true;
 				}
-				return skipIt;
+				return false;
 			};
 			//now scan through the keys skipping any that we should leave and cleaning the rest
 			var pArray = [];
