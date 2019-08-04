@@ -1,7 +1,7 @@
 FROM node:10-alpine
 RUN mkdir -p /home/node-red && mkdir /data
 WORKDIR /home/node-red
-RUN apk update && apk add --purge python make g++ && \
+RUN apk update && apk add --purge python make g++ curl && \
   npm uninstall --verbose --unsafe-perm --global --save bcrypt && \
   npm install --verbose --unsafe-perm --build-from-source --global bcrypt && \
   apk del --purge python make g++

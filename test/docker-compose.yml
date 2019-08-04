@@ -2,7 +2,7 @@ version: '2.4'
 services:
 
   consulseed:
-    image: "consul:1.5.2"
+    image: "consul:1.5.3"
     entrypoint:
       - consul
       - agent
@@ -14,7 +14,7 @@ services:
       - "consul"
 
   consul:
-    image: "consul:1.5.2"
+    image: "consul:1.5.3"
     depends_on:
       - "consulseed"
     environment:
@@ -31,7 +31,7 @@ services:
       - "consul"
 
   consului:
-    image: "consul:1.5.2"
+    image: "consul:1.5.3"
     depends_on:
       - "consulseed"
     environment:
