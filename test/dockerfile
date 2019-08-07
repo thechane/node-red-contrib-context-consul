@@ -11,7 +11,7 @@ RUN adduser -H -D -h /home/node-red node-red && \
 USER node-red
 RUN npm install --verbose --unsafe-perm node-red node-red-contrib-context-consul
 EXPOSE 1880
-COPY ./settings.js /home/node-red/
-COPY ./flows.json /home/node-red/
-COPY ./startup.sh /home/node-red/
+COPY --chown=node-red:node-red ./settings.js /home/node-red/
+COPY --chown=node-red:node-red ./flows.json /home/node-red/
+COPY --chown=node-red:node-red ./startup.sh /home/node-red/
 CMD ["/home/node-red/startup.sh"]
