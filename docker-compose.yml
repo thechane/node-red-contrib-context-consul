@@ -10,6 +10,7 @@ services:
       - -bootstrap-expect=3
       - -data-dir=/tmp/consuldata
       - -bind={{ GetPrivateInterfaces | include "network" "10.95.0.0/16" | attr "address" }}
+      - -node=consulnode1
     networks:
       - "consul"
 
@@ -27,6 +28,7 @@ services:
       - -bind={{ GetPrivateInterfaces | include "network" "10.95.0.0/16" | attr "address" }}
       - -client=0.0.0.0
       - -retry-join=consulseed:8301
+      - -node=consulnode2
     networks:
       - "consul"
 
@@ -45,6 +47,7 @@ services:
       - -client=0.0.0.0
       - -retry-join=consulseed:8301
       - -ui                                              ##assuming you want the UI on
+      - -node=consulnode3
     networks:
       - "consul"
     ports:
@@ -52,7 +55,9 @@ services:
       - "8600:8600"
 
   nodered:
-    build: ./
+    build:
+      context: .
+      dockerfile: ./dockerfile_devl
     depends_on:
       - "consul"
     networks:

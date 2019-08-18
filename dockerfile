@@ -10,8 +10,8 @@ RUN adduser -H -D -h /home/node-red node-red && \
   chmod g+s /home/node-red
 USER node-red
 RUN npm install --verbose --unsafe-perm node-red node-red-contrib-context-consul
-EXPOSE 1880
 COPY --chown=node-red:node-red ./settings.js /home/node-red/
 COPY --chown=node-red:node-red ./flows.json /home/node-red/
 COPY --chown=node-red:node-red ./startup.sh /home/node-red/
+EXPOSE 1880
 CMD ["/home/node-red/startup.sh"]

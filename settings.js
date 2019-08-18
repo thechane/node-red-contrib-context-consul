@@ -253,6 +253,8 @@ module.exports = {
     	        datacenter: "dc1",	//populates the dc option in all API calls
     	        prefix: "test",		//all KV pairs are stored in path _nrcontext/[prefix]/
     	        consistent: true,	//consistency normal (false) or strong (true, default)
+    	        lock: true,
+    	        locknode: "consulnode2",
     	        debug: true		//flag to enable console debug messages
             }
       }

@@ -33,167 +33,175 @@
     		datacenter: "dc1",		//populates the dc option in all API calls
     		prefix: "dev",			//all KV pairs are stored in path _nrcontext/[prefix]/ - see below
     		consistent: true,		//consistency normal (false) or strong (true, default) - see Consul docs
-    		cache: true,			//use memory cache	--NOTE, disable only for debugging
+    		lock,					//boolean, lock on or off (default false)
+    		lockttl,				//(string: "") - Specifies the number of seconds (between 10s and 86400s).
+    		locknode,				//Specifies the name of the consul node. This must refer to a node that is already registered.
+    		lockdelay,				//(string: "15s") - Specifies the duration for the lock delay. This must be greater than 0.
     		debug: false			//flag to enable console debug messages
         }
 	}
 
  Key Value store structure:
 
- _nrcontext/[prefix config option]
-   ├── global
-   │      ├── key/value
-   │      ├── key/value
-   ├── <id of Flow 1>
-   │      ├── key/value
-   │      ├── key/value
-   │      └── key/value
-   └── <id of Flow 2>
-          ├── key/value
-          ├── key/value
-          └── key/value
+ _nrcontext
+   └──[prefix config option]
+   			├────_hello					<-- ping test
+   			├────_consulContextLock		<-- used to lock session
+		   	├────global
+		   	│      	├── key/value
+		   	│      	├── key/value
+		   	├────<id of Flow 1>
+		   	│      	├── key/value
+		   	│      	├── key/value
+		   	│      	└── key/value
+		   	└────<id of Flow 2>
+		          	├── key/value
+		          	├── key/value
+		          	└── key/value
 
  */
 
-let fetchValue = (client, opts, cache, debug) => {
-	if ("value" in opts) delete opts.value;
-	opts.buffer = true;
-	if (debug) console.info("DEBUG:ConsulContext:fetchValue:opts:" + JSON.stringify(opts));
-	return client.kv.get(opts).then((result) => {
-		if (result === null) 		throw new Error("ERROR:ConsulContext:fetchValue:null result");
-		if (!("Value" in result)) 	throw new Error("ERROR:ConsulContext:fetchValue:noValueFound");
-		return result.Value;
-	}).catch((err) => {
+let fetchValue = (client, k, debug) => {
+	if (debug) console.info("DEBUG:ConsulContext:fetchValue:" + k);
+	return client.kv.get({"key": k, "buffer": true})
+	.catch((err) => {
 		if ("statusCode" in err && err.statusCode == 404) {
 			if (debug) console.info("DEBUG:ConsulContext:fetchValue:nullresponse");
-			return(null);
+			return(undefined);	//copied from localfilesystem built in, return undefined if nothing found
 		} else {
 			throw err;
 		}
 	}).then((result) => {
-		if (cache && !(opts.key in cache)) cache[opts.key] = result;
-		if (debug) console.info("DEBUG:ConsulContext:fetchValue:result:" + result);
-		try {
-			return JSON.parse(result.toString());
-		} catch (e) {
-			throw new Error("ERROR:ConsulContext:fetchValue:failed to return parsed value:" + e);
+		if (!("Value" in result)) {
+			if (debug) console.info("DEBUG:ConsulContext:fetchValue:consul:" + k + ":no Value in result");
+			return(undefined);	//copied from localfilesystem built in, return undefined if nothing found
 		}
+		return result.Value;
 	}).catch((err) => {
-		throw err;
-	});
-}
-
-let getFromCache = (key, cache, debug) => {
-	return new Promise((resolve, reject) => {
-		if (cache && key in cache) {
-			if (debug) console.info("DEBUG:ConsulContext:getFromCache:key:" + key);
-			try {
-				let value = JSON.parse(cache[key].toString());
-				if (debug) console.info("DEBUG:ConsulContext:getFromCache:value:" + value);
-				resolve(value);
-			} catch (e) {
-				reject("ERROR:ConsulContext:getFromCache:unable to parse value for key:" + key);
-			}
-		} else {
-			reject("ERROR:ConsulContext:getFromCache:key not found in cache:" + key);
-		}
-	});
-}
-
-let sendKV = (client, opts, cache, debug) => {
-	if (debug) console.info("DEBUG:ConsulContext:sendKV:opts:" + JSON.stringify(opts));
-	opts.value = Buffer.from(JSON.stringify(opts.value));
-	return client.kv.set(opts).then((result) => {
-		if (result === null) {
-			throw new Error("ERROR:ConsulContext:sendKV:null result for key:" + opts.key);
-		} else if (typeof result !== "boolean") {
-			throw new Error("ERROR:ConsulContext:sendKV:none bool result for key:" + opts.key);
-		} else if (! result) {
-			throw new Error("ERROR:ConsulContext:sendKV:false response retured from consul for key:" + opts.key + ":" + result);
-		} else {
-			return result;
-		}
-	}).catch((err) => {
-		throw err;
+		throw new Error("ERROR:ConsulContext:fetchValueFailed:consul:" + err);
 	}).then((result) => {
-		if (cache) cache[opts.key] = opts.value;
-		return result;
+		if (debug) console.info("DEBUG:ConsulContext:fetchValue:result:" + result);
+		return JSON.parse(result.toString());
 	}).catch((err) => {
-		throw err;
+		throw new Error("ERROR:ConsulContext:fetchValue:failed to return parsed value:" + err);
 	});
 }
 
-let fetchKeys = (client, opts, debug) => {
-	if ("value" in opts) delete opts.value;
-	if (debug) console.info("DEBUG:ConsulContext:fetchKeys:opts:" + JSON.stringify(opts));
-	return client.kv.keys(opts).then((result) => {
+let sendKV = (client, k, v, debug) => {
+	if (debug) console.info("DEBUG:ConsulContext:sendKV:" + k + ":" + v);
+	return client.kv.set({"key": k, "value": Buffer.from(JSON.stringify(v))}).then((result) => {
+		if (result === null) {
+			throw new Error("ERROR:ConsulContext:sendKV:null result for key:" + k);
+		} else if (typeof result !== "boolean") {
+			throw new Error("ERROR:ConsulContext:sendKV:non bool result for key:" + k);
+		} else if (! result) {
+			throw new Error("ERROR:ConsulContext:sendKV:false response returned from consul for key:" + k + ":" + result);
+		}
+	}).catch((err) => {
+		throw new Error("ERROR:ConsulContext:sendKVfailed:consul:" + err);
+	});
+}
+
+let fetchKeys = (client, k, debug, debugmore) => {
+	if (debug) console.info("DEBUG:ConsulContext:fetchKeys:" + k);
+	return client.kv.keys({"key": k}).then((result) => {
 		if (result == null) {
-			if (debug) console.info("DEBUG:ConsulContext:fetchKeys:nullOrUndefinedResponse");
-			return([]);
+			throw new Error("ERROR:ConsulContext:fetchKeys:nullOrUndefinedResponseFromConsul");
 		} else if (! Array.isArray(result)) {
-			throw new Error("ERROR:ConsulContext:Error:Keys returned a non array value:" + JSON.stringify(result));
+			throw new Error("ERROR:ConsulContext:Keys returned a non array value:" + JSON.stringify(result));
 		} else {
+			if (debug) console.info("DEBUG:ConsulContext:fetchKeys:consul:keys:" + JSON.stringify(result));
 			return result;
 		}
 	}).catch((err) => {
 		if ("statusCode" in err && err.statusCode == 404) {
-			if (debug) console.info("DEBUG:ConsulContext:fetchKeys:no keys found at " + opts.key);
+			if (debug) console.info("DEBUG:ConsulContext:fetchKeys:no consul keys found at " + k);
 			return([]);
 		}
-		throw err;
+		throw new Error("ERROR:ConsulContext:fetchKeysFailed:" + err);
 	});
 }
 
-let deleteKey = (client, opts, debug) => {
-	if ("value" in opts) delete opts.value;
-	opts.recurse = true;
-	if (debug) console.info("DEBUG:ConsulContext:deleteKey:opts:" + JSON.stringify(opts));
-	return client.kv.del(opts).then((result) => {
-		return result;
+let deleteKey = (client, k, debug) => {
+	if (debug) console.info("DEBUG:ConsulContext:deleteKey:" + k);
+	return client.kv.del({"key": k}).then(() => {
+		if (debug) console.info("DEBUG:ConsulContext:deleteKey:complete:" + k);
 	}).catch((err) => {
-		throw err;
+		throw new Error("ERROR:ConsulContext:deleteKeyFailed:consul:" + k + ":" + err);
 	});
 }
 
 //Construct and override
 let ConsulContext = function(config) {
-	this.debug 	= false;
-	this.opts 	= {};				//standard options sent in all consul API calls
+	if (typeof config !== "object") throw new Error("ERROR:ConsulContext:config:non object");
+	this.debug 		= false;
+	this.debugmore 	= false;
+	this.lock 		= false;
+	this.sessionid	= null;
+	config.defaults = {};
+
+	if (!("prefix" in config)) throw new Error("ERROR:ConsulContext:config:prefix:missing");
+	if (typeof config.prefix !== "string") throw new Error("ERROR:ConsulContext:config:prefix:non string");
+	this.prefix = "_nrcontext/" + config.prefix;	//will prefix the KV pairs with _nrcontext/[config_prefix] so that flows are uniquely handled
+	delete(config.prefix);
+
+	if ("datacenter" in config) {	//Sets the consul datacenter value in each API call (if none consul default = local)
+		if (typeof config.datacenter !== "string") throw new Error("ERROR:ConsulContext:config:datacenter:non string");
+		config.defaults.dc = config.datacenter;
+		delete(config.datacenter);
+	}
 	if ("token" in config) {		//ACL token for all API calls
-		this.opts.token = config.token;
+		if (typeof config.token !== "string") throw new Error("ERROR:ConsulContext:config:token:non string");
+		config.defaults.token = config.token;
 		delete(config.token);
 	}
-	this.opts.consistent = true;	//request strong consistency from consul
 	if ("consistent" in config) {	//but can be overridden
-		this.opts.consistent = config.consistent;
+		if (typeof config.consistent !== "boolean") throw new Error("ERROR:ConsulContext:config:consistent:non boolean");
+		config.defaults.consistent = config.consistent;
 		delete(config.datacenter);
-	}
-	if ("datacenter" in config) {	//Sets the consul datacenter value in each API call (if none consul default = local)
-		this.opts.dc = config.datacenter;
-		delete(config.datacenter);
+	} else {
+		config.defaults.consistent = true;
 	}
 	if ("timeout" in config) {		//Sets the API timeouts in ms
-		this.opts.timeout = config.timeout;
-		delete(config.datacenter);
-	}
-	this.cache = {};				//only turn off the cache for debugging!
-	if ("cache" in config) {		//Flag on whether to use the mem cache or not (hidden, default true)
-		if (! config.cache) this.cache = null;
-		delete(config.cache);
-	}
-	this.prefix = "_nrcontext";
-	if ("prefix" in config) {		//will prefix the KV pairs with _nrcontext/[config_prefix] so that flows are uniquly handled
-		this.prefix = "_nrcontext/" + config.prefix;
-		delete(config.prefix);
+		if (typeof config.timeout !== "string" && typeof config.timeout !== "number") throw new Error("ERROR:ConsulContext:config:timeout:non number|string");
+		config.defaults.timeout = config.timeout;
+		delete(config.timeout);
 	}
 	if ("debug" in config) {		//enable debugging to console
 		this.debug = true;
 		delete(config.debug);
 	}
+	if ("debugmore" in config) {	//enable more debugging to console
+		this.debugmore = true;
+		delete(config.debugmore);
+	}
+	if ("lock" in config) {			//enable lock to maintain exclusivity or die
+		if (typeof config.lock !== "boolean") throw new Error("ERROR:ConsulContext:config:lock:non boolean");
+		if (config.lock) {
+			if (!("locknode" in config)) throw new Error("ERROR:ConsulContext:config:lock requested with no locknode");
+			this.lock = config.lock;
+			config.defaults.name = this.prefix;
+		}
+		delete(config.lock);
+	}
+	if ("lockttl" in config) {
+		if (typeof config.lockttl !== "string") throw new Error("ERROR:ConsulContext:config:lockttl:non string");
+		config.defaults.ttl = config.lockttl;
+		delete(config.lockttl);
+	}
+	if ("lockdelay" in config) {
+		if (typeof config.lockdelay !== "string") throw new Error("ERROR:ConsulContext:config:lockdelay:non string");
+		config.defaults.lockdelay = config.lockdelay;
+		delete(config.lockdelay);
+	}
+	if ("locknode" in config) {
+		if (typeof config.locknode !== "string") throw new Error("ERROR:ConsulContext:config:locknode:non string");
+		config.defaults.node = config.locknode;
+		delete(config.locknode);
+	}
 	config.promisify = true;		//enforces consul to return promises rather than callbacks which we then just feed back into node-red context API
 	this.config = config;
 	this.client = null;
-	if (this.debug) console.info("Constructing ConsulContext with settings:" + JSON.stringify(this));
 }
 
 ConsulContext.prototype.open = function() {
@@ -202,129 +210,181 @@ ConsulContext.prototype.open = function() {
 
 	//Test functionality of all the consul calls before allowing node-red to ok this context plugin
 	var promiseArray 	= [];
-	let opts 			= Object.assign({}, this.opts);
-	opts.key 			= this.prefix + "/hello";
-	opts.value 			= "world";
-	promiseArray.push(
-		sendKV(this.client, opts, this.cache, this.debug)
-			.then(result => {
-				if (this.debug) console.info("DEBUG:ConsulContext:sendKV_test:success:" + JSON.stringify(result));
-			}).catch((err) => {
-				throw err;
-			}).then(() => fetchValue(this.client, opts, this.cache, this.debug))
-			.then(result => {
-				if (! result) throw new Error("ERROR:ConsulContext:open:fetchValue_test:no result");
-				if (result !== "world") throw new Error("ERROR:ConsulContext:open:fetchValue_test:" + JSON.stringify(result) + " does not match expected:\"world\"");
-				if (this.debug) console.info("DEBUG:ConsulContext:fetchValue_test:success:" + JSON.stringify(result));
-			}).catch((err) => {
-				throw err;
+	promiseArray.push(		//validate connectivity
+		sendKV(this.client, this.prefix + "/_hello", "world", this.debug)
+		.then(result => {
+			if (this.debug) console.info("DEBUG:ConsulContext:setvalue_test:success");
+		}).catch((err) => {
+			throw new Error("ERROR:ConsulContext:open:setvalue_test1:fail:" + err);
+		}).then(() => fetchValue(this.client, this.prefix + "/_hello", this.debug))
+		.then(result => {
+			if (! result) throw new Error("ERROR:ConsulContext:open:fetchValue_test:no result");
+			if (result !== "world") throw new Error("ERROR:ConsulContext:open:fetchValue_test:" + JSON.stringify(result) + " does not match expected:\"world\"");
+			if (this.debug) console.info("DEBUG:ConsulContext:fetchValue_test:success:" + JSON.stringify(result));
+		}).catch((err) => {
+			throw new Error("ERROR:ConsulContext:open:fetchValue_test1:fail:" + err);
 		})
 	);
-	let opts2 		= Object.assign({}, this.opts);
-	opts2.key 		= this.prefix + "/deleteme";
-	opts2.value 	= true;
-	let opts3 		= Object.assign({}, this.opts);
-	opts3.key		= this.prefix;
-	promiseArray.push(
-		sendKV(this.client, opts2, this.cache, this.debug)
-			.then(result => {
-				if (this.debug) console.info("DEBUG:ConsulContext:sendKV_test2:success:" + JSON.stringify(result));
-			}).catch((err) => {
-				throw err;
-			}).then(() => fetchValue(this.client, opts2, this.cache, this.debug))
-			.then(result => {
-				if (! result) throw new Error("ERROR:ConsulContext:open:fetchValue_test2:no result");
-				if (typeof result !== "boolean") throw new Error("ERROR:ConsulContext:open:fetchValue_test2:" + JSON.stringify(result)) + " does not match expected:\"delete failed\"}";
-				if (this.debug) console.info("DEBUG:ConsulContext:fetchValue_test2:success:" + JSON.stringify(result));
-			}).catch((err) => {
-				throw err;
-			}).then(() => fetchKeys(this.client, opts3, this.debug))
-			.then(result => {
-				if (! result) throw new Error("ERROR:ConsulContext:open:fetchKeys_test:no result");
-				let testok = false;
-				for (var i = 0; i < result.length; i++) {
-					if (this.debug) console.info("DEBUG:ConsulContext:fetchKeys_test:checking key:" + result[i]);
-					if (result[i].endsWith("deleteme")) testok = true;
-				}
-				if (! testok) throw new Error("ERROR:ConsulContext:open:fetchKeys_test:deleteme:not found in results:" + JSON.stringify(result));
-				if (this.debug) console.info("DEBUG:ConsulContext:fetchKeys_test:success:" + JSON.stringify(result));
-			}).catch((err) => {
-				throw err;
-			}).then(() => deleteKey(this.client, opts2, this.debug))
-			.then(result => {
-				if (this.debug) console.info("DEBUG:ConsulContext:deleteKey_test:success:" + JSON.stringify(result));
-			}).catch((err) => {
-				throw err;
-			}).then(() => fetchKeys(this.client, opts3, this.debug))
-			.then(result => {
-				if (! result) throw new Error("ERROR:ConsulContext:open:fetchKeys_test2:no result");
-				let testok = true;
-				for (var i = 0; i < result.length; i++) {
-					if (this.debug) console.info("DEBUG:ConsulContext:fetchKeys_test2:checking key:" + result[i]);
-					if (result[i].endsWith("deleteme")) testok = false;
-				}
-				if (! testok) throw new Error("ERROR:ConsulContext:open:fetchKeys_test2:deleteme:still found in results:" + JSON.stringify(result));
-				if (this.debug) console.info("DEBUG:ConsulContext:fetchKeys_test2:success:" + JSON.stringify(result));
-			}).catch((err) => {
-				throw err;
+
+	promiseArray.push(		//validate functionality
+		sendKV(this.client, this.prefix + "/deleteme", true, this.debug)
+		.then(result => {
+			if (this.debug) console.info("DEBUG:ConsulContext:setvalue_test2:success");
+		}).catch((err) => {
+			throw new Error("ERROR:ConsulContext:open:setValue_test2:fail:" + err);
+		}).then(() => fetchValue(this.client, this.prefix + "/deleteme", this.debug))
+		.then(result => {
+			if (! result) throw new Error("ERROR:ConsulContext:open:fetchValue_test2:no result");
+			if (typeof result !== "boolean") throw new Error("ERROR:ConsulContext:open:fetchValue_test2:" + JSON.stringify(result)) + " does not match expected:\"delete failed\"}";
+			if (this.debug) console.info("DEBUG:ConsulContext:fetchValue_test2:success:" + JSON.stringify(result));
+		}).catch((err) => {
+			throw new Error("ERROR:ConsulContext:open:fetchValue_test2:fail:" + err);
+		}).then(() => fetchKeys(this.client, this.prefix, this.debug, this.debugmore))
+		.then(result => {
+			if (! result) throw new Error("ERROR:ConsulContext:open:fetchKeys_test:no result");
+			let testok = false;
+			for (var i = 0; i < result.length; i++) {
+				if (this.debugmore) console.info("DEBUG:ConsulContext:fetchKeys_test:checking key:" + result[i]);
+				if (result[i].endsWith("deleteme")) testok = true;
+			}
+			if (! testok) throw new Error("ERROR:ConsulContext:open:fetchKeys_test:deleteme:not found in results:" + JSON.stringify(result));
+			if (this.debug) console.info("DEBUG:ConsulContext:fetchKeys_test:success:" + JSON.stringify(result));
+		}).catch((err) => {
+			throw new Error("ERROR:ConsulContext:open:fetchkeys_test2a:fail:" + err);
+		}).then(() => deleteKey(this.client, this.prefix + "/deleteme", this.debug))
+		.then(result => {
+			if (this.debug) console.info("DEBUG:ConsulContext:deleteKey_test:success:" + JSON.stringify(result));
+		}).catch((err) => {
+			throw new Error("ERROR:ConsulContext:open:deleteValue_test2:fail:" + err);
+		}).then(() => fetchKeys(this.client, this.prefix, this.debug, this.debugmore))
+		.then(result => {
+			if (! result) throw new Error("ERROR:ConsulContext:open:fetchKeys_test2:no result");
+			let testok = true;
+			for (var i = 0; i < result.length; i++) {
+				if (this.debugmore) console.info("DEBUG:ConsulContext:fetchKeys_test2:checking key:" + result[i]);
+				if (result[i].endsWith("deleteme")) testok = false;
+			}
+			if (! testok) throw new Error("ERROR:ConsulContext:open:fetchKeys_test2:deleteme:still found in results:" + JSON.stringify(result));
+			if (this.debug) console.info("DEBUG:ConsulContext:fetchKeys_test2:success:" + JSON.stringify(result));
+		}).catch((err) => {
+			throw new Error("ERROR:ConsulContext:open:fetchkeys_test2b:fail:" + err);
 		})
 	);
+
+	if (this.lock) {
+		if (this.debug) console.info("DEBUG:ConsulContext:session:locking:create:" + JSON.stringify(this.config.defaults));
+		promiseArray.push(
+			this.client.session.create().then((result) => {
+				if (this.debug) console.info("DEBUG:ConsulContext:session:create:" + JSON.stringify(result));
+				if (result === null) {
+					throw new Error("ERROR:ConsulContext:session:create:null result");
+				} else if (typeof result !== "object") {
+					throw new Error("ERROR:ConsulContext:session:create:non object result for session:" + this.config.defaults.name);
+				} else if (!("ID" in result)) {
+					throw new Error("ERROR:ConsulContext:session:create:no ID provided for session:" + this.config.defaults.name);
+				} else {
+					this.sessionid = result.ID;
+					if (this.debug) console.info("DEBUG:ConsulContext:session:create:success:" + this.sessionid);
+					return this.sessionid;
+				}
+			}).catch((err) => {
+				throw new Error("ERROR:ConsulContext:open:session:create:" + err);
+			}).then((sessionID) => this.client.session.get({		//confirm sessionID was generated and spit out debugging if wanted
+				"id": sessionID
+			})).then((result) => {
+				if (result === null) {
+					throw new Error("ERROR:ConsulContext:session:get:null result");
+				} else if (typeof result !== "object") {
+					throw new Error("ERROR:ConsulContext:session:get:non object result for session:" + this.config.defaults.name);
+				} else if (!("ID" in result)) {
+					throw new Error("ERROR:ConsulContext:session:get:no ID provided for session:" + this.config.defaults.name);
+				} else if (result.ID !== this.sessionid ) {
+					throw new Error("ERROR:ConsulContext:session:sessionIDs do not match:" + result.ID + ":" + this.sessionid + ":for session:" + this.config.defaults.name);
+				} else {
+					if (this.debug) console.info("DEBUG:ConsulContext:session:get:success:" + JSON.stringify(result));
+					return result.ID;
+				}
+			}).catch((err) => {
+				throw new Error("ERROR:ConsulContext:open:session:get:" + err);
+			}).then((sessionID) => this.client.kv.set({
+				"key": 		this.prefix + "/_consulContextLock",
+				"value":	"locked",
+				"acquire":	sessionID
+			})).then((result) => {
+				if (result === null) {
+					throw new Error("ERROR:ConsulContext:sendLockKV:null result");
+				} else if (typeof result !== "boolean") {
+					throw new Error("ERROR:ConsulContext:sendLockKV:non bool result");
+				} else if (! result) {
+					throw new Error("ERROR:ConsulContext:sendLockKV:false response returned");
+				} else {
+					return result;
+				}
+				return result;
+			}).catch((err) => {
+				throw new Error("ERROR:ConsulContext:open:session:setKVlock:" + err);
+			})
+		);
+	}
+
 	return Promise.all(promiseArray);
 }
 
 ConsulContext.prototype.close = function() {								//close down consul connection
 	if (this.debug) console.info("DEBUG:ConsulContext:closing with settings:" + JSON.stringify(this.config));
-	this.cache = {};
-	return Promise.resolve();	//return a resolved promise that does nothing because we have nothing to do
+	let promiseArray = [];
+	promiseArray.push(deleteKey(this.client, this.prefix + "/_hello", this.debug));
+	if (this.lock) {
+		promiseArray.push(		//UNlocking
+			this.client.kv.set({
+				"key": 		this.prefix + "/_consulContextLock",
+				"value":	"unlocked",
+				"release ":	this.sessionid
+			}).catch((err) => {
+				throw err;
+			}).then(() => this.client.session.destroy({
+				"id":		this.sessionid
+			})).catch((err) => {
+				throw err;
+			})
+		)
+	}
+	return Promise.all(promiseArray);
+	//return Promise.resolve();	//return a resolved promise that does nothing
 }
 
 ConsulContext.prototype.get = function(scope, key, callback) {				//get a value from a key
-	if (this.debug) console.info("DEBUG:ConsulContext:get " + scope + '/' + JSON.stringify(key));
-	if (callback && typeof callback !== 'function') throw new Error("Callback must be a function");
-	if (! callback) throw new Error("synchronous access not supported");
+	if (this.debug) console.info("DEBUG:ConsulContext:get:scope:" + this.prefix + "/" + scope + '/' + key);
+	if (! callback) throw new Error("ERROR:ConsulContext:get:synchronous get access not supported -- must guarantee Consul has the value");
+	if (typeof callback !== 'function') throw new Error("Callback must be a function");
 
+	let keypath = this.prefix + "/" + scope + '/' + key;
 	let pArray = [];
-	let opts = Object.assign({}, this.opts);
-	opts.key = this.prefix + "/" + scope + '/' + key;
-
-	if (typeof key == "string" && this.cache && opts.key in this.cache) {
-		pArray.push(getFromCache(opts.key, this.cache, this.debug));
-	} else if (typeof key == "string") {
-		pArray.push(fetchValue(this.client, opts, this.cache, this.debug));
+	if (typeof key == "string") {
+		pArray.push(fetchValue(this.client, keypath, this.debug));
 	} else if (Array.isArray(key)) {
-		let cached = false;
 		for (var i = 0; i < key.length; i++) {
-			let tmpopts = Object.assign({}, this.opts);
-			tmpopts.key = this.prefix + "/" + scope + '/' + key[i];
-			if (this.debug) console.info("DEBUG:ConsulContext:get (array) " + i.toString() + " of " + key.length.toString());
-			if (this.cache && tmpopts.key in this.cache) {
-				cached = true;
-				pArray.push(getFromCache(opts.key, this.cache, this.debug));
-			} else {
-				if (cached) throw new Error("ERROR:ConsulContext:get:key list was part cached, key not cached = " + key[i]);
-				pArray.push(fetchValue(this.client, tmpopts, this.cache, this.debug));
-			}
+			if (this.debugmore) console.info("DEBUG:ConsulContext:get (array) " + i.toString() + " of " + key.length.toString());
+			pArray.push(fetchValue(this.client, this.prefix + "/" + scope + '/' + key[i], this.debug));
 		}
 	} else {
 		throw new Error("ERROR:ConsulContext:get:key is not an array or a string");
 	}
 
 	if (this.debug) console.info("DEBUG:ConsulContext:get:pArray has " + pArray.length.toString() + " entries");
+	if (this.debug) console.info("DEBUG:ConsulContext:get:return:async");
 	if (pArray.length > 1) {
-		return Promise.all(pArray)
-			.then((data) 	=> { callback(null, data) })
-			.catch((err) 	=> { callback(err) });
+		Promise.all(pArray).then((data)	=> { callback(null, data) }).catch((err) => { callback(err) });
 	} else {
-		return pArray[0]
-			.then((data) 	=> { callback(null, data) })
-			.catch((err) 	=> { callback(err) });
+		pArray[0].then((data) => { callback(null, data) }).catch((err) => { callback(err) });
 	}
+
 }
 
 ConsulContext.prototype.set = function(scope, key, value, callback) {		//set key value data, depending on input it can be multiple
-	if (this.debug) console.info("DEBUG:ConsulContext:set " + scope + '/' + JSON.stringify(key) + ":" + JSON.stringify(value));
-	if (callback && typeof callback !== 'function') throw new Error("Callback must be a function");
-	if (! callback) throw new Error("synchronous access not supported");
+	if (this.debug) console.info("DEBUG:ConsulContext:set " + this.prefix + '/' + scope + '/' + key + ":" + JSON.stringify(value));
+	if (! callback) throw new Error("ERROR:ConsulContext:set:synchronous write access not supported -- must guarantee Consul takes the value");
+	if (typeof callback !== 'function') throw new Error("Callback must be a function");
 
 	let checkByteSize = (key, check) => {
 		let byteLength = Buffer.from(JSON.stringify(check)).length;
@@ -335,8 +395,8 @@ ConsulContext.prototype.set = function(scope, key, value, callback) {		//set key
 	let values 	= []
 	let keys 	= [];		//Organize our data so we know i's good going into consul
 	if (typeof(key) === "string" && ! Array.isArray(value)) {
-		if (this.debug) console.info("DEBUG:ConsulContext:set:key and value are both strings");
-		checkByteSize(key, value);
+		if (this.debug) console.info("DEBUG:ConsulContext:set:key is string and value is " + typeof(value));
+		if (value) checkByteSize(key, value);
 		keys.push(key);
 		values.push(value);
 	} else if (Array.isArray(key) && ! Array.isArray(value)) {
@@ -346,7 +406,7 @@ ConsulContext.prototype.set = function(scope, key, value, callback) {		//set key
 			if (doneIt) {
 				values.push(null);
 			} else {
-				checkByteSize(key[i], value);
+				if (value) checkByteSize(key[i], value);
 				keys.push(key[i]);
 				values.push(value);
 				doneIt = true;
@@ -354,13 +414,13 @@ ConsulContext.prototype.set = function(scope, key, value, callback) {		//set key
 		}
 	} else if (typeof(key) === "string" && Array.isArray(value)) {
 		if (this.debug) console.info("DEBUG:ConsulContext:set:pushing first value " + value[0] + " onto key string " + key);
-		checkByteSize(key, value[0]);
+		if (value[0]) checkByteSize(key, value[0]);
 		values.push(value[0]);
 		keys.push(key);
 	} else if (Array.isArray(key) && Array.isArray(value) && key.length === value.length) {
 		if (this.debug) console.info("DEBUG:ConsulContext:set:matching key and value array lengths");
 		for (var i = 0; i < key.length; i++) {
-			checkByteSize(key[i], value[i]);
+			if (value[i]) checkByteSize(key[i], value[i]);
 		}
 		values = value;
 		keys = key;
@@ -368,7 +428,7 @@ ConsulContext.prototype.set = function(scope, key, value, callback) {		//set key
 		if (this.debug) console.info("DEBUG:ConsulContext:set:more keys than values to setting some values to null");
 		for (var i = 0; i < value.length; i++) {
 			if (value[i]) {
-				checkByteSize(key[i], value[i]);
+				if (value[i]) checkByteSize(key[i], value[i]);
 				keys.push(key[i]);
 				values.push(value[i]);
 			} else {
@@ -379,7 +439,7 @@ ConsulContext.prototype.set = function(scope, key, value, callback) {		//set key
 	} else if (Array.isArray(key) && Array.isArray(value) && key.length < value.length) {
 		if (this.debug) console.info("DEBUG:ConsulContext:set:more values that keys to discarding extra values");
 		for (var i = 0; i < key.length; i++) {
-			checkByteSize(key[i], value[i]);
+			if (value[i]) checkByteSize(key[i], value[i]);
 			keys.push(key[i]);
 			values.push(value[i]);
 		}
@@ -389,113 +449,86 @@ ConsulContext.prototype.set = function(scope, key, value, callback) {		//set key
 
 	if (this.debug) console.info("DEBUG:ConsulContext:set:processing " + keys.length.toString() + " key value pairs");
 	var promiseArray = [];
+	var cachArray = [];
 	for (var i = 0; i < keys.length; i++) {
-		let opts = Object.assign({}, this.opts);
-		opts.key = this.prefix + "/" + scope + '/' + keys[i];
-		opts.value = values[i];
-		if (this.debug) console.info("DEBUG:ConsulContext:set " + i.toString() + " of " + keys.length.toString() + ", " + opts.key + ":" + opts.value);
-		promiseArray.push( sendKV(this.client, opts, this.cache, this.debug) );
+		let key = this.prefix + "/" + scope + '/' + keys[i];
+		if (this.debugmore) console.info("DEBUG:ConsulContext:set " + i.toString() + " of " + keys.length.toString() + ", " + key + ":" + values[i]);
+		if (typeof(values[i]) == "undefined") {
+			if (this.debug) console.info("DEBUG:ConsulContext:set:undefinedSoDelete:key:" + key);
+			deleteKey(this.client, key, this.debug).resolve();	//node-red change node sets value to undefined when deleting key for some reason
+		} else {
+			promiseArray.push( sendKV(this.client, key, values[i], this.debug) );
+		}
 	}
-	if (this.debug && this.cache) console.info("DEBUG:ConsulContext:set:cache:" + JSON.stringify(this.cache));
 	if (promiseArray.length > 1) {
-		return Promise.all(promiseArray)
-			.then((data) 	=> { callback(null) })
-			.catch((err) 	=> { callback(err) });
+		Promise.all(promiseArray).then((data) => { callback(null) }).catch((err) => { callback(err) });
 	} else {
-		return promiseArray[0]
-			.then((data) 	=> { callback(null) })
-			.catch((err) 	=> { callback(err) });
+		promiseArray[0].then((data)	=> { callback(null) }).catch((err) => { callback(err) });
 	}
 }
 
 ConsulContext.prototype.keys = function(scope, callback) {
 	if (this.debug) console.info("DEBUG:ConsulContext:keys:scope:" + scope);
-	if (callback && typeof callback !== 'function') throw new Error("Callback must be a function");
-	if (! callback) throw new Error("synchronous access not supported");
-	if (this.cache && this.prefix + "/" + scope in this.cache) {
-		let allkeys = Object.keys(this.cache);
-		let allInScopeKeys = [];
-		for (var i = 0; i < allkeys.length; i++) {
-			if (allkeys[i].startsWith(scope)) allInScopeKeys.push(allkeys[i]);
+	if (! callback) throw new Error("ERROR:ConsulContext:keys:synchronous write access not supported -- must guarantee Consul takes the value");
+	if (typeof callback !== 'function') throw new Error("Callback must be a function");
+	let key = this.prefix + "/" + scope;
+
+	fetchKeys(this.client, key, this.debug, this.debugmore)
+	.then((data) => {
+		let partkeys = [];
+		let prefixLength = key.length + 1; //+1 is the "/"
+		for (var i = 0; i < data.length; i++) {
+			if (data[i] == this.prefix + "/_hello" || data[i]  == this.prefix + "/_consulContextLock") continue;
+			partkeys.push( data[i].substring(prefixLength,data[i].length) );		//trim off the preamble
 		}
-		return allkeys;
-	} else {
-		let opts = Object.assign({}, this.opts);
-		opts.key = this.prefix + "/" + scope;
-		return fetchKeys(this.client, opts, this.debug)
-			.then((data) 	=> { callback(null, data) })
-			.catch((err)	=> { callback(err) });
-	}
+		if (this.debug) console.info("DEBUG:ConsulContext:keys:returning:" + JSON.stringify(partkeys) + ":from:" + JSON.stringify(data));
+		callback(null, partkeys);
+	}).catch((err) => { callback(err) });
 }
 
 ConsulContext.prototype.delete = function(scope) {
-	if (this.debug) console.info("DEBUG:ConsulContext:delete in scope " + scope);
-	let opts = Object.assign({}, this.opts);
-	opts.key = this.prefix + "/" + scope;
-	if (this.cache && opts.key in this.cache) delete this.cache[opts.key];
-	return deleteKey(this.client, opts, this.debug);
+	if (this.debug) console.info("DEBUG:ConsulContext:delete:scope:" + scope);
+	let key = this.prefix + "/" + scope;
+	deleteKey(this.client, key, this.debug).resolve();
 }
 
 ConsulContext.prototype.clean = function(activeNodes) {
 	if (this.debug) console.info("DEBUG:ConsulContext:clean:avoidActiveNodes" + JSON.stringify(activeNodes));
-	let opts = Object.assign({}, this.opts);
-	opts.key = this.prefix;
-
-	//Clean the cache
-	if (this.cache) {
-		if (this.debug) console.info("DEBUG:ConsulContext:clean:cache:" + JSON.stringify(this.cache));
-		let skipCachedPath = (key) => {
+	return fetchKeys(this.client, this.prefix, this.debug, this.debugmore).then(result => {
+		if (this.debug) console.info("DEBUG:ConsulContext:clean:consul:" + JSON.stringify(result));
+		return result;
+	}).catch((err) => {
+		throw err;
+	}).then(result => {
+		//quick function to scan the activeNodes
+		let skipPath = (key) => {
 			for (var i = 0; i < activeNodes.length; i++) {
 				if (key.startsWith(this.prefix + "/" + activeNodes[i])) return true;
 			}
 			return false;
 		};
-		let cacheKeys = Object.keys(this.cache);
-		for (var i = 0; i < cacheKeys.length; i++) {
-			if (skipCachedPath(cacheKeys[i]) || cacheKeys[i].startsWith("global")) continue;
-			if (this.debug) console.info("DEBUG:ConsulContext:cleaned:delete:" + cacheKeys[i]);
-			delete this.cache[ cacheKeys[i] ];
+		//now scan through the keys skipping any that we should leave and cleaning the rest
+		var pArray = [];
+		for (var i = 0; i < result.length; i++) {
+			if (this.debug) console.info("DEBUG:ConsulContext:clean:checking:" + result[i]);
+			if (	skipPath(result[i])								||		//skip active nodes entire tree
+					result[i].startsWith(this.prefix + "/global")	||		//copied from localfilesystem built in, never clean globals
+					result[i] == this.prefix + "/_hello"			||
+					result[i] == this.prefix + "/_consulContextLock"
+				) {
+				if (this.debug) console.info("DEBUG:ConsulContext:clean:consul:skipping:" + result[i]);
+				continue;
+			}
+			if (this.debug) console.info("DEBUG:ConsulContext:clean:consul:deleting:" + result[i]);
+			pArray.push( deleteKey(this.client, result[i], this.debug) );
 		}
-	}
-
-	//... and now clean Consul
-	return fetchKeys(this.client, opts, this.debug)
-		.then(result => {
-			if (this.debug) console.info("DEBUG:ConsulContext:clean:consul:" + JSON.stringify(result));
-			return result;
-		}).catch((err) => {
-			throw err;
-		}).then(result => {
-			//quick function to scan the activeNodes
-			let skipPath = (key) => {
-				for (var i = 0; i < activeNodes.length; i++) {
-					if (key.startsWith(this.prefix + "/" + activeNodes[i])) return true;
-				}
-				return false;
-			};
-			//now scan through the keys skipping any that we should leave and cleaning the rest
-			var pArray = [];
-			for (var i = 0; i < result.length; i++) {
-				if (this.debug) console.info("DEBUG:ConsulContext:clean:checking" + result[i]);
-				if (	skipPath(result[i])								||		//skip active nodes entire tree
-						result[i].startsWith(this.prefix + "/global")	||		//copied from localfilesystem built in, never clean globals
-						result[i] == this.prefix + "/hello"
-					) {
-					if (this.debug) console.info("DEBUG:ConsulContext:clean:consul:skipping" + result[i]);
-					continue;
-				}
-				let tmpopts = Object.assign({}, this.opts);
-				tmpopts.key = result[i];
-				if (this.debug) console.info("DEBUG:ConsulContext:clean:consul:deleting " + tmpopts.key);
-				pArray.push( deleteKey(this.client, tmpopts, this.debug) );
-			}
-			if (pArray.length > 0) {
-				return Promise.all(pArray);
-			} else {
-				return Promise.resolve();
-			}
-		}).catch((err) => {
-			throw err;
+		if (pArray.length > 0) {
+			return Promise.all(pArray);
+		} else {
+			return Promise.resolve();
+		}
+	}).catch((err) => {
+		throw new Error("ERROR:ConsulContext:clean:" + err);
 	});
 }
 
