@@ -5,7 +5,7 @@
 		"consul",
 		"context"
 	],
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Node-RED Context storage plugin using Consul KV store",
 	"main": "index.js",
 	"scripts": {
