@@ -138,6 +138,7 @@ let ConsulContext = function(config) {
 	this.debugmore 	= false;
 	this.lock 		= false;
 	this.sessionid	= null;
+	this.locknode	= null;
 	config.defaults = {};
 
 	if (!("prefix" in config)) throw new Error("ERROR:ConsulContext:config:prefix:missing");
@@ -196,7 +197,7 @@ let ConsulContext = function(config) {
 	}
 	if ("locknode" in config) {
 		if (typeof config.locknode !== "string") throw new Error("ERROR:ConsulContext:config:locknode:non string");
-		config.defaults.node = config.locknode;
+		this.locknode = config.locknode;
 		delete(config.locknode);
 	}
 	config.promisify = true;		//enforces consul to return promises rather than callbacks which we then just feed back into node-red context API
@@ -274,7 +275,7 @@ ConsulContext.prototype.open = function() {
 	if (this.lock) {
 		if (this.debug) console.info("DEBUG:ConsulContext:session:locking:create:" + JSON.stringify(this.config.defaults));
 		promiseArray.push(
-			this.client.session.create().then((result) => {
+			this.client.session.create({"node": this.locknode}).then((result) => {
 				if (this.debug) console.info("DEBUG:ConsulContext:session:create:" + JSON.stringify(result));
 				if (result === null) {
 					throw new Error("ERROR:ConsulContext:session:create:null result");

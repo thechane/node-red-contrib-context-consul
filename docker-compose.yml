@@ -3,12 +3,14 @@ services:
 
   consulseed:
     image: "consul:1.5.3"
+    environment:
+      - "CONSUL_HTTP_ADDR=0.0.0.0"
     entrypoint:
       - consul
       - agent
       - -server
       - -bootstrap-expect=3
-      - -data-dir=/tmp/consuldata
+      - -data-dir=/tmp
       - -bind={{ GetPrivateInterfaces | include "network" "10.95.0.0/16" | attr "address" }}
       - -node=consulnode1
     networks:
@@ -16,15 +18,15 @@ services:
 
   consul:
     image: "consul:1.5.3"
-    depends_on:
-      - "consulseed"
     environment:
       - "CONSUL_HTTP_ADDR=0.0.0.0"
+    depends_on:
+      - "consulseed"
     entrypoint:
       - consul
       - agent
       - -server
-      - -data-dir=/tmp/consuldata
+      - -data-dir=/tmp
       - -bind={{ GetPrivateInterfaces | include "network" "10.95.0.0/16" | attr "address" }}
       - -client=0.0.0.0
       - -retry-join=consulseed:8301
@@ -34,15 +36,15 @@ services:
 
   consului:
     image: "consul:1.5.3"
-    depends_on:
-      - "consulseed"
     environment:
       - "CONSUL_HTTP_ADDR=0.0.0.0"
+    depends_on:
+      - "consulseed"
     entrypoint:
       - consul
       - agent
       - -server
-      - -data-dir=/tmp/consuldata
+      - -data-dir=/tmp
       - -bind={{ GetPrivateInterfaces | include "network" "10.95.0.0/16" | attr "address" }}
       - -client=0.0.0.0
       - -retry-join=consulseed:8301

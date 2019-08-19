@@ -248,7 +248,7 @@ module.exports = {
                 port: 8500,		//listening consul port
                 secure: false,		//TLS (https) secured?
                 ca: {},			//TLS info -- ca (String[], optional): array of strings or Buffers of trusted certificates in PEM format
-                //token: "something",	//Consul token if any to be included in all API calls
+                //token: "secret",	//Consul token if any to be included in all API calls
                 timeout: 3000,		//API timeout in ms
     	        datacenter: "dc1",	//populates the dc option in all API calls
     	        prefix: "test",		//all KV pairs are stored in path _nrcontext/[prefix]/
