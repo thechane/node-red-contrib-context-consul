@@ -1,0 +1,53 @@
+<script type="text/x-red" data-template-name="customconsul">
+	<!-- SETUP INPUT -->
+	<div class="form-row">
+        <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Name"><br />
+        <label for="node-input-key"><i class="icon-tag"></i> Key</label>
+        <input type="text" id="node-input-key" placeholder="Key"><br />
+        <label for="node-input-value"><i class="icon-tag"></i> Value</label>
+        <input type="text" id="node-input-value" placeholder="Value"><br />
+        <label for="node-input-context"><i class="icon-cog"></i> Context</label>
+        <select id="node-input-context">
+        	<option value="node"> Node</option>
+	        <option value="flow" selected> Flow</option>
+	        <option value="global"> Global</option>
+	    </select><br/><br/>
+        <label for="node-input-contextplugin"><i class="icon-tag"></i> Context Plugin Name</label>
+        <input type="text" id="node-input-contextplugin" placeholder="Contextplugin"><br />
+    </div>
+	<hr>
+
+    <!-- QUICK TIP -->
+   	<div class="form-tips">
+   		<b>Tip:</b> Change the key value and then go view changes in Consul <br>
+   	</div>
+
+</script>
+
+<script type="text/x-red" data-help-name="customconsul">
+    <p>leave the value undefined to delete the key</p>
+</script>
+
+
+<script type="text/javascript">
+    RED.nodes.registerType('customconsul',{
+        category: 'function',
+        defaults: {
+            name: {value:""},
+            key: {value:"", required:true},
+            value: {value:"", required:false},
+            context: {value:"node",required: true},
+            contextplugin: {value:"consul", required:true}
+        },
+        inputs:1,
+        outputs:1,
+        label: function() {
+            return this.name||"customconsul";
+        },
+        oneditprepare: function() {
+            var node = this;
+
+        }
+    });
+</script>

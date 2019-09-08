@@ -14,7 +14,7 @@
         "func": "flow.set(\"count\", 123, \"consul\", function(err) {\n    node.send(msg);\n})",
         "outputs": 1,
         "noerr": 0,
-        "x": 310,
+        "x": 330,
         "y": 140,
         "wires": [
             [
@@ -53,7 +53,7 @@
         "console": false,
         "tostatus": false,
         "complete": "false",
-        "x": 650,
+        "x": 670,
         "y": 140,
         "wires": []
     },
@@ -65,7 +65,7 @@
         "func": "flow.get(\"count\", \"consul\", function(err, count) { \n    msg.payload = count;\n    node.send(msg);\n})",
         "outputs": 1,
         "noerr": 0,
-        "x": 490,
+        "x": 510,
         "y": 140,
         "wires": [
             [
@@ -113,7 +113,7 @@
         "from": "",
         "to": "",
         "reg": false,
-        "x": 310,
+        "x": 330,
         "y": 220,
         "wires": [
             [
@@ -132,7 +132,7 @@
         "tostatus": false,
         "complete": "payload2",
         "targetType": "msg",
-        "x": 660,
+        "x": 680,
         "y": 220,
         "wires": []
     },
@@ -305,5 +305,56 @@
         "wires": [
             []
         ]
+    },
+    {
+        "id": "c43715fb.459418",
+        "type": "customconsul",
+        "z": "c10444d6.24f428",
+        "name": "Custom Node Demo",
+        "key": "A",
+        "value": "2",
+        "context": "node",
+        "contextplugin": "consul",
+        "x": 340,
+        "y": 60,
+        "wires": [
+            [
+                "bddb89e8.3fdb78"
+            ]
+        ]
+    },
+    {
+        "id": "274bb114.fd20ae",
+        "type": "inject",
+        "z": "c10444d6.24f428",
+        "name": "",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "x": 100,
+        "y": 60,
+        "wires": [
+            [
+                "c43715fb.459418"
+            ]
+        ]
+    },
+    {
+        "id": "bddb89e8.3fdb78",
+        "type": "debug",
+        "z": "c10444d6.24f428",
+        "name": "",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "x": 670,
+        "y": 60,
+        "wires": []
     }
 ]

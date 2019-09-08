@@ -1,0 +1,31 @@
+{
+	"name": "customconsul",
+	"version": "0.0.2",
+	"description": "Node-RED Context storage plugin using Consul KV store - test custom node",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/thechane/node-red-contrib-context-consul.git"
+	},
+	"dependencies": {
+		"node-red-contrib-context-consul": "^0.1.1"
+	},
+	"keywords": [
+		"node-red",
+		"consul",
+		"context"
+	],
+	"author": "Stuart Chaney",
+	"license": "Apache-2.0",
+	"contributors": [
+		"Stuart Chaney"
+	],
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"node-red": {
+		"version": ">=0.19.0",
+		"nodes": {
+			"customconsul": "customconsul.js"
+		}
+	}
+}
