@@ -168,11 +168,11 @@ let ConsulContext = function(config) {
 		config.defaults.timeout = config.timeout;
 		delete(config.timeout);
 	}
-	if ("debug" in config) {		//enable debugging to console
+	if ("debug" in config && config.debug) {		//enable debugging to console
 		this.debug = true;
 		delete(config.debug);
 	}
-	if ("debugmore" in config) {	//enable more debugging to console
+	if ("debugmore" in config && config.debug) {	//enable more debugging to console
 		this.debugmore = true;
 		delete(config.debugmore);
 	}
